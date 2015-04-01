@@ -25,28 +25,16 @@ namespace TrainStationServer
             sip = new SIPTools();
         }
 
-        public static bool IsRequest(byte[] recv, int i)
+        public static bool IsRequest(XmlDocument doc)
         {
-            XmlDocument doc = new XmlDocument();
             XmlElement root;
             XmlNodeList nodeList;
-            try
-            {
-                sip = new SIPTools(recv, i);
-                doc = SIPTools.XmlExtract(recv, i);
-                if (doc == null)
-                    return false;
-            }
-            catch (XmlException e)
-            {
-                Console.WriteLine(e.Message);
-            }
 
-            FileStream sendbuf = new FileStream("D://recieve.txt", FileMode.OpenOrCreate, FileAccess.Write);
-            sendbuf.Close();
-            sendbuf = new FileStream("D://recieve.txt", FileMode.Append, FileAccess.Write);
-            sendbuf.Write(Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml), 0, Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml).Length);
-            sendbuf.Close();
+            //FileStream sendbuf = new FileStream("D://recieve.txt", FileMode.OpenOrCreate, FileAccess.Write);
+            //sendbuf.Close();
+            //sendbuf = new FileStream("D://recieve.txt", FileMode.Append, FileAccess.Write);
+            //sendbuf.Write(Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml), 0, Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml).Length);
+            //sendbuf.Close();
 
             root = doc.DocumentElement;
             nodeList = doc.GetElementsByTagName("request");
@@ -62,24 +50,33 @@ namespace TrainStationServer
             XmlNodeList nodeList;
             XmlNode node;
             XmlDocument response = new XmlDocument();
+
             root = doc.DocumentElement;
-            nodeList = root.SelectNodes("/request/@command");
-            node = nodeList.Item(0);
-            switch (node.InnerText)
+            nodeList = doc.GetElementsByTagName("request");
+            if (nodeList.Count > 0)
             {
-                case "SaRegister":
-                    response = SaRegister(doc);
-                    break;
-                case "SaKeepAlive":
-                    response = SaKeepAlive(doc);
-                    break;
-                case "ResReport":
-                    response = ResReport(doc);
-                    break;
-                default:
-                    response = new XmlDocument();
-                    break;
+                nodeList = root.SelectNodes("/request/@command");
+                node = nodeList.Item(0);
+                switch (node.InnerText)
+                {
+                    case "SaRegister":
+                        response = SaRegister(doc);
+                        break;
+                    case "SaKeepAlive":
+                        response = SaKeepAlive(doc);
+                        break;
+                    case "ResReport":
+                        response = ResReport(doc);
+                        break;
+                    case "ResChange":
+                        response = ResChange(doc);
+                        break;
+                    default:
+                        response = new XmlDocument();
+                        break;
+                }
             }
+
             return response;
         }
 
@@ -89,13 +86,13 @@ namespace TrainStationServer
             XmlElement root;
             XmlNodeList nodeList;
             XmlNode node;
-            XmlDocument request = new XmlDocument();
+            XmlDocument response = new XmlDocument();
             try
             {
                 sip = new SIPTools(recv, i);
                 doc = SIPTools.XmlExtract(recv, i);
                 if (doc == null)
-                    return Encoding.GetEncoding("GB2312").GetBytes(sip.SIPResponse(request));
+                    return Encoding.GetEncoding("GB2312").GetBytes(sip.SIPResponse(response));
             }
             catch(XmlException e)
             {
@@ -117,24 +114,24 @@ namespace TrainStationServer
                 switch (node.InnerText)
                 {
                     case "SaRegister":
-                        request = SaRegister(doc);
+                        response = SaRegister(doc);
                         break;
                     case "SaKeepAlive":
-                        request = SaKeepAlive(doc);
+                        response = SaKeepAlive(doc);
                         break;
                     case "ResReport":
-                        request = ResReport(doc);
+                        response = ResReport(doc);
                         break;
                     case "ResChange":
-                        request = ResChange(doc);
+                        response = ResChange(doc);
                         break;
                     default:
-                        request = new XmlDocument();
+                        response = new XmlDocument();
                         break;
                 }
             }
 
-            return Encoding.GetEncoding("GB2312").GetBytes(sip.SIPResponse(request));
+            return Encoding.GetEncoding("GB2312").GetBytes(sip.SIPResponse(response));
         }
 
         public static string[] Response(byte[] recv, int i)
@@ -156,12 +153,6 @@ namespace TrainStationServer
                 Console.WriteLine(e.Message);
             }
 
-            FileStream sendbuf = new FileStream("D://response.txt", FileMode.OpenOrCreate, FileAccess.Write);
-            sendbuf.Close();
-            sendbuf = new FileStream("D://response.txt", FileMode.Append, FileAccess.Write);
-            sendbuf.Write(Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml), 0, Encoding.GetEncoding("GB2312").GetBytes(doc.OuterXml).Length);
-            sendbuf.Close();
-
             root = doc.DocumentElement;
             nodeList = doc.GetElementsByTagName("response");
             if (nodeList.Count > 0)
@@ -178,12 +169,39 @@ namespace TrainStationServer
                         result = new string[3];
                         result = QueryAlarmResResponse(doc);
                         break;
+                    case "ControlPTZ":
+                        result = null;
+                        break;
                     default:
                         result = null;
                         break;
                 }
             }
             return result;
+        }
+
+        public static XmlDocument Translate(XmlDocument doc)
+        {
+            XmlDocument request = new XmlDocument();
+            XmlNode node;
+            try
+            {
+                node = doc.SelectSingleNode("//*");
+                switch (node.Name)
+                {
+                    case "PTZControl"://收到的信息为PTZControl
+                        request = ControlPTZTranslate(doc);
+                        break;
+                    default:
+                        break;
+                }
+                
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine(ex);
+            }
+            return request;
         }
 
         #region Down 2 Up
@@ -275,7 +293,7 @@ namespace TrainStationServer
             XmlOp.ElementAdd(Response, "response", "parameters");
             XmlOp.ElementAdd(Response, "parameters", "saKeepAlivePeriod");
             XmlOp.SetNodeInnerText(Response, "saKeepAlivePeriod", 0, "10");
-            Response.Save("D://SaKeepAlive-request.xml");
+            //Response.Save("D://SaKeepAlive-request.xml");
 
             return Response;
         }
@@ -788,13 +806,13 @@ namespace TrainStationServer
         //}
 
         #region StartMediaReq
-        public static byte[] StartMediaReq(string resId, string userId, string userLevel, string mediaType, string linkMode, string targetIpAddr, string targetPort, string flag)
+        public static XmlDocument StartMediaReq(string resId, string userId, string userLevel, string mediaType, string linkMode, string targetIpAddr, string targetPort, string flag)
         {
             XmlTools XmlOp = new XmlTools();
             XmlDocument Request = XmlOp.XmlCreate();
 
             XmlOp.ElementAdd(Request, null, "request");
-            XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StartMediaReq");
+            XmlOp.SetNodeAttribute(Request, "request", 0, "command", "StartMediaReq");
             XmlOp.ElementAdd(Request, "request", "parameters");
             XmlOp.ElementAdd(Request, "parameters", "resId");
             XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
@@ -813,8 +831,7 @@ namespace TrainStationServer
             XmlOp.ElementAdd(Request, "parameters", "flag");
             XmlOp.SetNodeInnerText(Request, "flag", 0, flag);
             Request.Save("D://StartMediaReq-response.xml");
-
-            return Encoding.GetEncoding("GB2312").GetBytes(sip.SIPRequest(Request));
+            return Request;
         }
 
         public static byte[] test(byte[] recv, int i)//Only for test
@@ -896,7 +913,7 @@ namespace TrainStationServer
         #endregion
 
         #region ControlPTZ
-        public static byte[] ControlPTZ(string resId, string userId, string userLevel, string cmd, string param, string speed)
+        public static XmlDocument ControlPTZ(string resId, string userId, string userLevel, string cmd, string param, string speed)
         {
             XmlTools XmlOp = new XmlTools();
             XmlDocument Request = XmlOp.XmlCreate();
@@ -918,18 +935,72 @@ namespace TrainStationServer
             XmlOp.SetNodeInnerText(Request, "speed", 0, speed);
             Request.Save("D://ControlPTZ-response.xml");
 
-            return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+            return Request;
+        }
+        public static XmlDocument ControlPTZ(string userLevel, string cmd, string param)
+        {
+            XmlTools XmlOp = new XmlTools();
+            XmlDocument Request = XmlOp.XmlCreate();
+            //*测试*直接对resId，userId，speed赋值
+            string resId = "1111111", userId = "22222222", speed = "7777";
+            XmlOp.ElementAdd(Request, null, "request");
+            XmlOp.SetNodeAttribute(Request, "request", 0, "command", "ControlPTZ");
+            XmlOp.ElementAdd(Request, "request", "parameters");
+            XmlOp.ElementAdd(Request, "parameters", "resId");//test
+            XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
+            XmlOp.ElementAdd(Request, "parameters", "userId");//test
+            XmlOp.SetNodeInnerText(Request, "userId", 0, userId);
+            XmlOp.ElementAdd(Request, "parameters", "userLevel");
+            XmlOp.SetNodeInnerText(Request, "userLevel", 0, userLevel);
+            XmlOp.ElementAdd(Request, "parameters", "cmd");
+            XmlOp.SetNodeInnerText(Request, "cmd", 0, cmd);
+            XmlOp.ElementAdd(Request, "parameters", "param");
+            XmlOp.SetNodeInnerText(Request, "param", 0, param);
+            XmlOp.ElementAdd(Request, "parameters", "speed");
+            XmlOp.SetNodeInnerText(Request, "speed", 0, speed);
+            Request.Save("D://ControlPTZ-response.xml");
+
+            return Request;
+        }
+
+        public static XmlDocument ControlPTZTranslate(XmlDocument doc)
+        {
+            XmlTools XmlOp = new XmlTools();
+            string[] parameters;
+            //string[] paraNames = { "resId", "userId", "userLevel", "cmd", "param", "speed" };//原
+            string[] paraNames = { "level", "cmd", "parameter"};
+            parameters = XmlOp.GetAttribute(doc, "PTZControl", paraNames);
+            //return ControlPTZ(parameters[0], parameters[1], parameters[2], parameters[3], parameters[4], parameters[5]);//原
+            return ControlPTZ(parameters[0], parameters[1], parameters[2]);
         }
         #endregion
 
         #region StopMediaReq
-        public static byte[] StopMediaReq(string sessionId, string resId, string stopFlag)
+        //public static byte[] StopMediaReq(string sessionId, string resId, string stopFlag)
+        //{
+        //    XmlTools XmlOp = new XmlTools();
+        //    XmlDocument Request = XmlOp.XmlCreate();
+
+        //    XmlOp.ElementAdd(Request, null, "request");
+        //    XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StopMediaReq");
+        //    XmlOp.ElementAdd(Request, "request", "parameters");
+        //    XmlOp.ElementAdd(Request, "parameters", "sessionId");
+        //    XmlOp.SetNodeInnerText(Request, "sessionId", 0, sessionId);
+        //    XmlOp.ElementAdd(Request, "parameters", "resId");
+        //    XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
+        //    XmlOp.ElementAdd(Request, "parameters", "stopFlag");
+        //    XmlOp.SetNodeInnerText(Request, "stopFlag", 0, stopFlag);
+        //    Request.Save("D://StopMediaReq-response.xml");
+
+        //    return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+        //}
+        public static XmlDocument StopMediaReq(string sessionId, string resId, string stopFlag)
         {
             XmlTools XmlOp = new XmlTools();
             XmlDocument Request = XmlOp.XmlCreate();
-
+            
             XmlOp.ElementAdd(Request, null, "request");
-            XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StopMediaReq");
+            XmlOp.SetNodeAttribute(Request, "request", 0, "command", "StopMediaReq");
             XmlOp.ElementAdd(Request, "request", "parameters");
             XmlOp.ElementAdd(Request, "parameters", "sessionId");
             XmlOp.SetNodeInnerText(Request, "sessionId", 0, sessionId);
@@ -939,7 +1010,7 @@ namespace TrainStationServer
             XmlOp.SetNodeInnerText(Request, "stopFlag", 0, stopFlag);
             Request.Save("D://StopMediaReq-response.xml");
 
-            return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+            return Request;
         }
         #endregion
 
@@ -997,13 +1068,14 @@ namespace TrainStationServer
         #endregion
 
         #region StartPlayBack
-        public static byte[] StartPlayBack(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)
+        //public static byte[] StartPlayBack(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)//原
+        public static XmlDocument StartPlayBack(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)
         {
             XmlTools XmlOp = new XmlTools();
             XmlDocument Request = XmlOp.XmlCreate();
 
             XmlOp.ElementAdd(Request, null, "request");
-            XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StartPlayBack");
+            XmlOp.SetNodeAttribute(Request, "request", 0, "command", "StartPlayBack");
             XmlOp.ElementAdd(Request, "request", "parameters");
             XmlOp.ElementAdd(Request, "parameters", "resId");
             XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
@@ -1027,8 +1099,50 @@ namespace TrainStationServer
             XmlOp.SetNodeInnerText(Request, "locationFlag", 0, locationFlag.ToString());
             Request.Save("D://StartPlayBack-response.xml");
 
-            return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+            //return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));//原
+            return Request;
+
         }
+
+        //public static XmlDocument StartPlayBack(XmlDocument doc)
+        //{
+        //    XmlTools XmlOp = new XmlTools();
+        //    XmlDocument Request = XmlOp.XmlCreate();
+        //    string resId, userId, userLevel, startTime, endTime, targetIpAddr, targetPort;
+        //    int flag, locationFlag, linkMode;
+
+
+        //    //saId = XmlOp.GetInnerText(Doc, "saId");
+        //    //resId = XmlOp.GetInnerTextList(Doc, "resId");
+        //    //state = XmlOp.GetInnerTextList(Doc, "state");
+
+        //    XmlOp.ElementAdd(Request, null, "request");
+        //    XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StartPlayBack");
+        //    XmlOp.ElementAdd(Request, "request", "parameters");
+        //    XmlOp.ElementAdd(Request, "parameters", "resId");
+        //    XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
+        //    XmlOp.ElementAdd(Request, "parameters", "userId");
+        //    XmlOp.SetNodeInnerText(Request, "userId", 0, userId);
+        //    XmlOp.ElementAdd(Request, "parameters", "userLevel");
+        //    XmlOp.SetNodeInnerText(Request, "userLevel", 0, userLevel);
+        //    XmlOp.ElementAdd(Request, "parameters", "startTime");
+        //    XmlOp.SetNodeInnerText(Request, "startTime", 0, startTime);
+        //    XmlOp.ElementAdd(Request, "parameters", "endTime");
+        //    XmlOp.SetNodeInnerText(Request, "endTime", 0, endTime);
+        //    XmlOp.ElementAdd(Request, "parameters", "linkMode");
+        //    XmlOp.SetNodeInnerText(Request, "linkMode", 0, linkMode.ToString());
+        //    XmlOp.ElementAdd(Request, "parameters", "targetIpAddr");
+        //    XmlOp.SetNodeInnerText(Request, "targetIpAddr", 0, targetIpAddr);
+        //    XmlOp.ElementAdd(Request, "parameters", "targetPort");
+        //    XmlOp.SetNodeInnerText(Request, "targetPort", 0, targetPort);
+        //    XmlOp.ElementAdd(Request, "parameters", "flag");
+        //    XmlOp.SetNodeInnerText(Request, "flag", 0, flag.ToString());
+        //    XmlOp.ElementAdd(Request, "parameters", "locationFlag");
+        //    XmlOp.SetNodeInnerText(Request, "locationFlag", 0, locationFlag.ToString());
+        //    Request.Save("D://StartPlayBack-response.xml");
+
+        //    return Request;
+        //}
 
         public static string[] StartPlayBackResponse(XmlDocument Doc)
         {
@@ -1049,13 +1163,45 @@ namespace TrainStationServer
         #endregion
 
         #region StartHisLoad
-        public static byte[] StartHisLoad(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)
+        //public static byte[] StartHisLoad(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)
+        //{
+        //    XmlTools XmlOp = new XmlTools();
+        //    XmlDocument Request = XmlOp.XmlCreate();
+
+        //    XmlOp.ElementAdd(Request, null, "request");
+        //    XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StartPlayBack");
+        //    XmlOp.ElementAdd(Request, "request", "parameters");
+        //    XmlOp.ElementAdd(Request, "parameters", "resId");
+        //    XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
+        //    XmlOp.ElementAdd(Request, "parameters", "userId");
+        //    XmlOp.SetNodeInnerText(Request, "userId", 0, userId);
+        //    XmlOp.ElementAdd(Request, "parameters", "userLevel");
+        //    XmlOp.SetNodeInnerText(Request, "userLevel", 0, userLevel);
+        //    XmlOp.ElementAdd(Request, "parameters", "startTime");
+        //    XmlOp.SetNodeInnerText(Request, "startTime", 0, startTime);
+        //    XmlOp.ElementAdd(Request, "parameters", "endTime");
+        //    XmlOp.SetNodeInnerText(Request, "endTime", 0, endTime);
+        //    XmlOp.ElementAdd(Request, "parameters", "linkMode");
+        //    XmlOp.SetNodeInnerText(Request, "linkMode", 0, linkMode.ToString());
+        //    XmlOp.ElementAdd(Request, "parameters", "targetIpAddr");
+        //    XmlOp.SetNodeInnerText(Request, "targetIpAddr", 0, targetIpAddr);
+        //    XmlOp.ElementAdd(Request, "parameters", "targetPort");
+        //    XmlOp.SetNodeInnerText(Request, "targetPort", 0, targetPort);
+        //    XmlOp.ElementAdd(Request, "parameters", "flag");
+        //    XmlOp.SetNodeInnerText(Request, "flag", 0, flag.ToString());
+        //    XmlOp.ElementAdd(Request, "parameters", "locationFlag");
+        //    XmlOp.SetNodeInnerText(Request, "locationFlag", 0, locationFlag.ToString());
+        //    Request.Save("D://StartHisLoad-response.xml");
+
+        //    return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+        //}
+        public static XmlDocument StartHisLoad(string resId, string userId, string userLevel, string startTime, string endTime, int linkMode, string targetIpAddr, string targetPort, int flag, int locationFlag)
         {
             XmlTools XmlOp = new XmlTools();
             XmlDocument Request = XmlOp.XmlCreate();
 
             XmlOp.ElementAdd(Request, null, "request");
-            XmlOp.SetNodeAttribute(Request, "response", 0, "command", "StartPlayBack");
+            XmlOp.SetNodeAttribute(Request, "request", 0, "command", "StartHisLoad");
             XmlOp.ElementAdd(Request, "request", "parameters");
             XmlOp.ElementAdd(Request, "parameters", "resId");
             XmlOp.SetNodeInnerText(Request, "resId", 0, resId);
@@ -1079,7 +1225,7 @@ namespace TrainStationServer
             XmlOp.SetNodeInnerText(Request, "locationFlag", 0, locationFlag.ToString());
             Request.Save("D://StartHisLoad-response.xml");
 
-            return Encoding.GetEncoding("GB2312 ").GetBytes(sip.SIPRequest(Request));
+            return Request;
         }
 
         public static string[] StartHisLoadResponse(XmlDocument Doc)
