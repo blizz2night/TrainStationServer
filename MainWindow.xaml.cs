@@ -101,7 +101,6 @@ namespace TrainStationServer
             stateobject state = (stateobject)ar.AsyncState;
             XmlDocument Doc = new XmlDocument();
             SipSocket temp;
-            string sendbuffer;
             if (state.isClosed)
                 return;
             try
@@ -121,7 +120,7 @@ namespace TrainStationServer
                 }
                 else
                 {
-                    result = InterfaceC.Response(state.recv, i);
+                    result = InterfaceC.Response(Doc);
                     if (result != null)
                     {
                         SipSocket.InsertResult(state.socket, result);
@@ -190,7 +189,7 @@ namespace TrainStationServer
             byte[] recv = new byte[2048];
             XmlDocument Request = new XmlDocument(); ;
             SipSocket temp;
-            //string tcpIp, tcpPort;
+            System.Timers.Timer timer = new System.Timers.Timer(2000);
             string[] result = new string[10];
             eXosip.Call.SendAnswer(eXosipEvent.tid, 180, IntPtr.Zero);
             IntPtr sdp = eXosip.GetRemoteSdp(eXosipEvent.did);
@@ -233,25 +232,14 @@ namespace TrainStationServer
             }
 
             temp = SipSocket.FindSipSocket(exoSocket);
+            SipSocket.CleanResult(exoSocket);
             temp.SendRequest(Request);
+            result = WaitForResult(testsocket, timer, 2000);
 
-            System.Timers.Timer timer = new System.Timers.Timer(5000);
-            timer.Elapsed += new System.Timers.ElapsedEventHandler(Tick);
-            timer.Enabled = true;
-            while (true)
-            {
-                if (timeout)
-                {
-                    timeout = false;
-                    result = null;
-                    break;
-                }
-                if ((result = SipSocket.GetResult(exoSocket)) != null)
-                    break;
-                Thread.Sleep(100);
-            }
-            timer.Enabled = false;
-            if (result == null)
+            if (result != null)
+                for (int k = 0; k < result.Length; k++)
+                    Console.WriteLine(result[k]);
+            else
             {
                 eXosip.Call.SendAnswer(eXosipEvent.tid, 404, IntPtr.Zero);
                 eXosip.Unlock();
@@ -295,6 +283,8 @@ namespace TrainStationServer
             XmlDocument Request;
             Socket exoSocket;
             SipSocket temp;
+            string[] result = new string[10];
+            System.Timers.Timer timer = new System.Timers.Timer(2000);
             ptr = osip.Message.GetContentType(eXosipEvent.request);
             if (ptr == IntPtr.Zero) return;
             osip.ContentType content = (osip.ContentType)Marshal.PtrToStructure(ptr, typeof(osip.ContentType));
@@ -326,10 +316,15 @@ namespace TrainStationServer
             Console.Write(xml);
             /*----------------------------分割线-----------------------------*/
             TempDoc.LoadXml(xml);
+            temp = SipSocket.FindSipSocket(exoSocket);
             Request = InterfaceC.CallMessageTranslate(TempDoc, resId, userId);//提取参数并转为C类接口格式
             SipSocket.CleanResult(exoSocket);
-            temp = SipSocket.FindSipSocket(exoSocket);
-            temp.SendRequest(Request); 
+            temp.SendRequest(Request);
+            result = WaitForResult(testsocket, timer, 2000);
+
+            if (result != null)
+                for (int k = 0; k < result.Length; k++)
+                    Console.WriteLine(result[k]);
         }
 
         void osipMessage(eXosip.Event eXosipEvent)
@@ -377,10 +372,11 @@ namespace TrainStationServer
 
         void osipCallClose(eXosip.Event eXosipEvent)
         {
-            IntPtr ptr;
             XmlDocument Request;
             Socket exoSocket;
             SipSocket temp;
+            string[] result = new string[10];
+            System.Timers.Timer timer = new System.Timers.Timer(2000);
             osip.From pFrom = osip.Message.GetFrom(eXosipEvent.request);
             osip.From pTo = osip.Message.GetTo(eXosipEvent.request);
             osip.URI uri = (osip.URI)Marshal.PtrToStructure(osip.From.GetURL(pTo.url), typeof(osip.URI));
@@ -393,19 +389,16 @@ namespace TrainStationServer
                 return;
             }
             /*----------------------------分割线-----------------------------*/
-            Request = InterfaceC.StopMediaReq("0000000000000000", "6101010000000001", "0");//提取参数并转为C类接口格式
-
             temp = SipSocket.FindSipSocket(exoSocket);
-            try
-            {
-                temp.SendRequest(Request);
-            }
-            catch (SocketException ex)
-            {
-                System.Console.WriteLine(ex);
-            }
-
+            Request = InterfaceC.StopMediaReq("0000000000000000", "6101010000000001", "0");//提取参数并转为C类接口格式
             SipSocket.CleanResult(exoSocket);
+            temp.SendRequest(Request);
+            result = WaitForResult(testsocket, timer, 2000);
+
+            if (result != null)
+                for (int k = 0; k < result.Length; k++)
+                    Console.WriteLine(result[k]);
+
         }
 
         private void Test_Click_1(object sender, RoutedEventArgs e)//测试用
